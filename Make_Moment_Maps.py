@@ -53,12 +53,13 @@ ID = np.ones(1000000)
 infile = '/users/nadia/moment_maps/1538811061_mosaic/Visual_sources/1538811061_visual.txt'
 vel, x, y, z = np.loadtxt(infile,usecols=(6,7,8,9),unpack=True) #vel in km/s
 vel = np.around(vel,0)
-
 #vel = 300000*((-freq + 1420.4e6)/(1420.4e6)) #if your list has freq
+
 xpad=35
 ypad=35
 zpad=2
-radii=15 #radius used around source for HI profile
+radii=35 #radius used around source for HI profile
+zpad_HI=8
 
 ######################################
 
@@ -131,7 +132,7 @@ def get_noise(cube,x,y,z,xpad,ypad,zpad):  # function to look at the 8 squares a
     return noise,sigma  #return the noise and sigma
 
 
-def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,frame='world',clean=False, cleaning_factor=1,order=0,vmin=None,vmax=None,HI_profile=False,HI_radii=radii):
+def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=None,frame='world',clean=False, cleaning_factor=1,order=0,vmin=None,vmax=None,HI_profile=False,HI_radii=radii): #I'm using label as the reliability
     
     current_wcs_3d = cube.wcs
     current_ra,current_dec,current_vel = current_wcs_3d.pixel_to_world_values(x,y,z)
@@ -169,7 +170,7 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,frame='worl
         gs.update(wspace=0)
         ax = fig.add_subplot(gs[0:17,0:16], projection=moment_map.wcs) # POINTS ARE NOT IN RA/DEC but the AXES ARE
         ax_HI = fig.add_subplot(gs[19:,0:20])
-        hx,hy,current_vel_HI,HI_centre,HI_radius=get_HI_profile(cube, x, y, z, xpad, ypad,radius=HI_radii)
+        hx,hy,current_vel_HI,HI_centre,HI_radius=get_HI_profile(cube, x, y, z, xpad, ypad, radius=HI_radii)
         # Display the HI profile
         ax_HI.plot(hx, hy,'o-', color='k')
         ax_HI.axvline(current_vel,ls='--',color='k',alpha=0.5)
@@ -209,6 +210,7 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,frame='worl
         cbar = plt.colorbar(im,ax=ax, pad=0.01)
         cbar.set_label('Brightness (Jy km/s /beam)', size=10, rotation=90,labelpad=11) 
         cbar.ax.tick_params(labelsize=10)
+        
     elif order==1: #moment1
         if vmin==None and vmax==None: #if both vmin & vmax are not specified:
             print("***WARNING*** It is highly recommended to specify a relevant vmin and vmax for moment-1 maps")
@@ -230,27 +232,51 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,frame='worl
     ax.set_ylabel("Dec (deg)", fontsize=10, labelpad=-0.5)
     ax.minorticks_on()
     #ax.tick_params(axis='both',labelsize=10)
-    ax.tick_params(which='both', width=1, labelsize=10)
-    ax.tick_params(which='both',direction='in')
+    #ax.tick_params(which='both', width=1, labelsize=10)
+    #ax.tick_params(which='both',direction='in')
     ax.tick_params(which='major', length=5)#, right=True)
     ax.tick_params(which='minor', length=2)#, right=True)
-        
+    
     # Add labels:
-    x_box,y_box = 0.03,0.87
+    if grid == True:
+        x_box,y_box = 0.03,0.87
+    else: x_box,y_box = 0.015,0.94
+        
     if label == None and ID == None and frame=='cartesian':
         plt.text(x_box,y_box,f'Z_chan = {int(round(z))}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
     elif label != None and ID == None and frame=='cartesian':
         plt.text(x_box,y_box,f'Z_chan = {int(round(z))} \nrel = {round(label,4)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
     elif label != None and ID != None and frame=='cartesian':
         plt.text(x_box,y_box,f'Z_chan = {int(round(z))} \nrel = {round(label,4)} \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        
     elif label !=None and ID != None and frame == 'world':
-        plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nrel = {round(label,4)} \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        if vel_label == None:
+            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nrel = {round(label,4)} \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        else:
+            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s \nrel = {round(label,4)} \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+            
+            
     elif label != None and ID ==None and frame == 'world':
-        plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nrel = {round(label,4)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        if vel_label==None:
+            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nrel = {round(label,4)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        else:
+            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s \nrel = {round(label,4)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+                
+                
     elif label == None and ID == None and frame == 'world':
-        plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        if vel_label==None:
+            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        else:
+            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+            
+            
     elif label == None and ID != None and frame == 'world':
-        plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        if vel_label == None:
+            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        else:
+            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        
+        
     elif label == None and ID != None and frame=='cartesian':
         plt.text(x_box,y_box,f'Z_chan = {int(round(z))} \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
 
@@ -279,7 +305,7 @@ def sum_region(centre, radius, data_array):
 def get_HI_profile(cube,x,y,z,xpad,ypad,radius):
     current_wcs_3d = cube.wcs
     current_ra,current_dec,current_vel = current_wcs_3d.pixel_to_world_values(x,y,z)
-    sub_cube = reduce_fits_file(cube, x, y, z, xpad, ypad, zpad) # Cutting the main fits file into a sub-cube
+    sub_cube = reduce_fits_file(cube, x, y, z, xpad, ypad, zpad_HI) # Cutting the main fits file into a sub-cube
     current_wcs_3d = sub_cube.wcs
     centre_sub_x,centre_sub_y,_ = current_wcs_3d.world_to_pixel_values(current_ra,current_dec,current_vel)
     sub_cube_data = sub_cube.hdu.data
@@ -290,12 +316,9 @@ def get_HI_profile(cube,x,y,z,xpad,ypad,radius):
     xs,ys = np.ones(z_len),np.ones(z_len)
     centre_pix = (int(np.round(centre_sub_x)),int(np.round(centre_sub_y))) # this is the central pixel of the subcube 
     zs = np.arange(z_len)
-    
     _,_,current_vel_range = current_wcs_3d.pixel_to_world_values(xs,ys,zs)
     
-    current_vel_range = current_vel_range
-    
-    line_intensity_max = [sum_region((centre_sub_x,centre_sub_y),pixel_radius,z_channel) for z_channel in sub_cube_data] #loop that gives me a sum of everything in the z channel range, in the radius around the ACTUAL centre
+    line_intensity_max = [sum_region((centre_sub_x,centre_sub_y),pixel_radius,z_channel) for z_channel in sub_cube_data]     #loop that gives me a sum of everything in the z channel range, in the radius around the (actual) centre
     return current_vel_range/1000,line_intensity_max,current_vel/1000, centre_pix, pixel_radius
 
 ######################################
@@ -307,7 +330,7 @@ grid = True #plot moment maps in grids of 9
 sorting = False
 
 if pos_only==True:
-    print("taking positives only")
+    print("taking positive vels only")
     x=x[pos_vels]
     y=y[pos_vels]
     z=z[pos_vels]
@@ -317,12 +340,17 @@ if pos_only==True:
     dec_sof=dec_sof[pos_vels]
     vel=vel[pos_vels]
 
-if sorting == True:
-    arg = np.argsort(z)[::-1]	#sort the images
+if sorting == True: #sort the images
+    arg = np.argsort(z)[::-1] #reversing the order
     z,x,y = z[arg],x[arg],y[arg]
 
-if grid==True:
-### Print images in grids of 9 (mom-maps ONLY - can't accommodate HI profiles at this stage)
+###########################
+#                         #
+#    grid of 9 images     #
+#                         #
+###########################
+    
+if grid==True: # mom-maps ONLY - can't accommodate HI profiles at this stage
 
     if len(ID)%9 == 0: #if len(ID) is a multiple of 9
         max_frame=int(len(ID)/9)
@@ -337,7 +365,7 @@ if grid==True:
         plt.tight_layout() 
         for counter in range(9): #a grid of 9 plots in a figure
             pos=330+counter+1
-            cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,pos=pos,order=0,vmin=0,HI_radii=radii) #label=rel[i],ID=ID[i]
+            cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,pos=pos,order=0,vmin=0,HI_radii=radii,vel_label=vel[i],label=None,ID=None) # label is currently hard-coded as reliability. 
             i+=1
             if i == len(x):
                 break
@@ -345,15 +373,20 @@ if grid==True:
         plt.savefig(f'MomMaps_{file_name}_{frame_counter}of{max_frame}.png')
         frame_counter+=1
 
-else: # Print individual images (HI profiles optional)  
+###########################
+#                         #
+#    individual images    #
+#                         #
+###########################
+
+else: # (HI profiles optional)  
 
     print(f'printing {len(x)} moment maps')
     print()
     for i in range(len(x)):
         fig = plt.figure(figsize=(10,10))
         plt.tight_layout()
-        cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,vmin=0,HI_profile=True,HI_radii=radii)
-        #remove label=rel[i],ID=ID[i] if not relevant
+        cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,vmin=0,HI_profile=True,HI_radii=radii,vel_label=vel[i],label=None,ID=None) # label is currently hard-coded as reliability. 
         plt.savefig(f'Mom_HI_{i+1}.png')
         print(f'Saved Mom_HI_{i+1}.png')
         print() 
