@@ -16,19 +16,39 @@ from spectral_cube import SpectralCube
 import matplotlib.gridspec as gridspec
 import warnings
 from astropy.wcs import WCS
+from matplotlib.patches import Ellipse
+import matplotlib
+from astropy.visualization import simple_norm
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredEllipse
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredDrawingArea
 from astropy.wcs import FITSFixedWarning
 warnings.simplefilter('ignore', FITSFixedWarning)
 #module add python/3.8.3
 #comment out block: cmd + /
 #cancel the run control+c
 
+from matplotlib.offsetbox import (AnchoredOffsetbox, AuxTransformBox, DrawingArea, TextArea, VPacker)
+class AnchoredEllipseBeam(AnchoredOffsetbox): #class that I need for plotting ellipse
+    def __init__(self, transform, width, height, angle, loc = 'lower left',
+                 pad=0.5, borderpad=0.1, prop=None, frameon=False):
+        """
+        Draw an ellipse the size in data coordinate of the give axes.
+        pad, borderpad in fraction of the legend font size (or prop)
+        """
+        self._box = AuxTransformBox(transform)
+        self.ellipse = Ellipse((0, 0), width, height, angle,fill=False,color='k',lw=2)
+        self._box.add_artist(self.ellipse)
+        super().__init__(loc, pad=pad, borderpad=borderpad,
+                         child=self._box, prop=prop, frameon=frameon)
+        
 ######################################
-#FITS cube
+#Input
 ######################################
 
 #Choose FITS cube:
-
 hdu = fits.open('/carta_share/users/nadia/Nadia_GA/1538811061_HI_mosaic_heliocen.fits') # shape: 3788, 3474, 573 
+hdu[0].header.set('BMAJ',16/3600)
+hdu[0].header.set('BMIN',16/3600) # Later the GPS mosaics will have this info in the header
 cube = SpectralCube.read(hdu) # Initiate a SpectralCube
 
 #convert cube to VRAD m/s:
@@ -37,14 +57,11 @@ cube = cube.with_spectral_unit(u.m/u.s,velocity_convention='radio',rest_value=14
 print(f"Cube now has spectral unit {cube.header['CTYPE3']} {cube.header['CUNIT3']}")
 hdu.close()
 
+
 #Cube now has dimensions [Vel, Dec, RA]
 _, Dec, _ = cube.world[0, :, 0]  #extract Dec world coordinates from cube
 _, _, RA = cube.world[0, 0, :]  #extract RA world coordinates from cube
 
-
-######################################
-#Input
-######################################
 
 rel = np.ones(1000000) # a fake array of rels in case the the user doesn't have rels
 ID = np.ones(1000000)
@@ -62,6 +79,27 @@ radii=35 #radius used around source for HI profile
 zpad_HI=8
 
 ######################################
+
+#Major and Minor axes (to draw the beam size):
+def check_for_beam_info(cube):
+    try: 
+        bmaj_test = cube.header['BMAJ']
+        bmin_test = cube.header['BMIN']
+        return True
+    except KeyError:
+        print('No beam info found in Header')
+        return False
+
+def get_beam_info(cube):
+    beam_major = cube.header['BMAJ']
+    beam_minor = cube.header['BMIN']
+    return beam_major,beam_minor
+
+def convert_arcsecs_to_pix(cube,arcssec_value):
+    deg_per_pix = cube.header['CDELT2']
+    arcsecs_per_pix = deg_per_pix * 3600
+    return arcssec_value/arcsecs_per_pix
+
 
 if type(x) == float or type(x) == int:
     x,y,z = np.array([x]), np.array([y]), np.array([z])
@@ -131,6 +169,14 @@ def get_noise(cube,x,y,z,xpad,ypad,zpad):  # function to look at the 8 squares a
     sigma= np.mean(sigmas)
     return noise,sigma  #return the noise and sigma
 
+def drawEllipse(cube,ax):      
+    if check_for_beam_info(cube)==True:
+        majorBeam, minorBeam = get_beam_info(cube)
+        majorBeamPixel, minorBeamPixel = convert_arcsecs_to_pix(cube,majorBeam*3600),convert_arcsecs_to_pix(cube,minorBeam*3600)
+        aeb = AnchoredEllipseBeam(ax.transData,width=majorBeamPixel,height=minorBeamPixel,angle=0)
+    else:
+        aeb = AnchoredEllipseBeam(ax.transData,width=0,height=0,angle=0)
+    ax.add_artist(aeb)
 
 def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=None,frame='world',clean=False, cleaning_factor=1,order=0,vmin=None,vmax=None,HI_profile=False,HI_radii=radii): #I'm using label as the reliability
     
@@ -163,16 +209,14 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=N
         img = moment_map.hdu.data
         #hi_column_density = moment_map_clean * 1.82 * 10**18 / (u.cm * u.cm) * u.s / u.K / u.km 
     
-    # Initiate an axis object with WCS projection information
-    
     if HI_profile == True:
         gs = gridspec.GridSpec(ncols=20,nrows=25,figure=fig)
         gs.update(wspace=0)
+        # Initiate an axis object with WCS projection information:
         ax = fig.add_subplot(gs[0:17,0:16], projection=moment_map.wcs) # POINTS ARE NOT IN RA/DEC but the AXES ARE
         ax_HI = fig.add_subplot(gs[19:,0:20])
         hx,hy,current_vel_HI,HI_centre,HI_radius=get_HI_profile(cube, x, y, z, xpad, ypad, radius=HI_radii)
-        # Display the HI profile
-        ax_HI.plot(hx, hy,'o-', color='k')
+        ax_HI.plot(hx, hy,'o-', color='k') # Display the HI profile
         ax_HI.axvline(current_vel,ls='--',color='k',alpha=0.5)
         #plt.legend()
 
@@ -208,7 +252,7 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=N
         elif vmin!=None and vmax!=None:
             im = ax.imshow(img,cmap='YlOrRd', vmin=vmin, vmax=vmax)
         cbar = plt.colorbar(im,ax=ax, pad=0.01)
-        cbar.set_label('Brightness (Jy km/s /beam)', size=10, rotation=90,labelpad=11) 
+        cbar.set_label('Brightness (Jy km/s /beam)', size=10, rotation=90, labelpad=11) 
         cbar.ax.tick_params(labelsize=10)
         
     elif order==1: #moment1
@@ -230,6 +274,11 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=N
     # Add axes labels
     ax.set_xlabel("RA (deg)", fontsize=10, labelpad=0.7)
     ax.set_ylabel("Dec (deg)", fontsize=10, labelpad=-0.5)
+    
+    # Add ellipse:
+    drawEllipse(cube, ax)
+    
+    #Ticks:
     ax.minorticks_on()
     #ax.tick_params(axis='both',labelsize=10)
     #ax.tick_params(which='both', width=1, labelsize=10)
@@ -350,7 +399,7 @@ if sorting == True: #sort the images
 #                         #
 ###########################
     
-if grid==True: # mom-maps ONLY - can't accommodate HI profiles at this stage
+if grid==True: # mom-maps ONLY, no HI profiles
 
     if len(ID)%9 == 0: #if len(ID) is a multiple of 9
         max_frame=int(len(ID)/9)
@@ -379,7 +428,7 @@ if grid==True: # mom-maps ONLY - can't accommodate HI profiles at this stage
 #                         #
 ###########################
 
-else: # (HI profiles optional)  
+else: # HI profiles optional  
 
     print(f'printing {len(x)} moment maps')
     print()
@@ -387,7 +436,7 @@ else: # (HI profiles optional)
         fig = plt.figure(figsize=(10,10))
         plt.tight_layout()
         cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,vmin=0,HI_profile=True,HI_radii=radii,vel_label=vel[i],label=None,ID=None) # label is currently hard-coded as reliability. 
-        plt.savefig(f'Mom_HI_{i+1}.png')
-        print(f'Saved Mom_HI_{i+1}.png')
+        plt.savefig(f'Mom0_{i+1}_vel={int(vel[i])}.png')
+        print(f'Saved Mom0_{i+1}_vel={int(vel[i])}.png')
         print() 
         plt.close()
