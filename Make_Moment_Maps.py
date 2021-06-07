@@ -46,9 +46,13 @@ class AnchoredEllipseBeam(AnchoredOffsetbox): #class that I need for plotting el
 ######################################
 
 #Choose FITS cube:
-hdu = fits.open('/carta_share/users/nadia/Nadia_GA/1538811061_HI_mosaic_heliocen.fits') # shape: 3788, 3474, 573 
-hdu[0].header.set('BMAJ',16/3600)
-hdu[0].header.set('BMIN',16/3600) # Later the GPS mosaics will have this info in the header
+# hdu = fits.open('/carta_share/users/nadia/Nadia_GA/1538811061_HI_mosaic_heliocen.fits') # 16" x 16", shape: 3788, 3474, 573 
+# beamsize = 16
+hdu = fits.open('/carta_share/users/nadia/CASA/1538811061_mosaic_12x12_9.fits') # 12" x 12"
+beamsize = 12
+
+hdu[0].header.set('BMAJ',beamsize/3600)
+hdu[0].header.set('BMIN',beamsize/3600) # Later the GPS mosaics will have this info in the header
 cube = SpectralCube.read(hdu) # Initiate a SpectralCube
 
 #convert cube to VRAD m/s:
@@ -67,10 +71,13 @@ rel = np.ones(1000000) # a fake array of rels in case the the user doesn't have 
 ID = np.ones(1000000)
 
 #Choose detection list:
-infile = '/users/nadia/moment_maps/1538811061_mosaic/Visual_sources/1538811061_visual.txt'
-vel, x, y, z = np.loadtxt(infile,usecols=(6,7,8,9),unpack=True) #vel in km/s
-vel = np.around(vel,0)
+# infile = '/users/nadia/moment_maps/1538811061_mosaic/Visual_sources/1538811061_visual.txt'
+# vel, x, y, z = np.loadtxt(infile,usecols=(6,7,8,9),unpack=True) #vel in km/s
+#vel = np.around(vel,0)
 #vel = 300000*((-freq + 1420.4e6)/(1420.4e6)) #if your list has freq
+
+#HIZOA source J1531-55
+vel, x, y, z = 1441, 2198, 1978, 498 #(radio vel I tihnk)
 
 xpad=35
 ypad=35
@@ -102,7 +109,7 @@ def convert_arcsecs_to_pix(cube,arcssec_value):
 
 
 if type(x) == float or type(x) == int:
-    x,y,z = np.array([x]), np.array([y]), np.array([z])
+    x,y,z,vel = np.array([x]), np.array([y]), np.array([z]), np.array([vel])
 
 if type(rel) == float or type(rel)==int:
     rel = np.array([rel])
@@ -218,6 +225,7 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=N
         hx,hy,current_vel_HI,HI_centre,HI_radius=get_HI_profile(cube, x, y, z, xpad, ypad, radius=HI_radii)
         ax_HI.plot(hx, hy,'o-', color='k') # Display the HI profile
         ax_HI.axvline(current_vel,ls='--',color='k',alpha=0.5)
+        ax_HI.axhline(0,ls='--',color='k',alpha=0.5)
         #plt.legend()
 
         # Add axes labels
@@ -375,7 +383,7 @@ def get_HI_profile(cube,x,y,z,xpad,ypad,radius):
 ######################################
 
 pos_only = False #plot only the detections with positive velocity
-grid = True #plot moment maps in grids of 9
+grid = False #plot moment maps in grids of 9
 sorting = False
 
 if pos_only==True:
@@ -435,8 +443,13 @@ else: # HI profiles optional
     for i in range(len(x)):
         fig = plt.figure(figsize=(10,10))
         plt.tight_layout()
-        cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,vmin=0,HI_profile=True,HI_radii=radii,vel_label=vel[i],label=None,ID=None) # label is currently hard-coded as reliability. 
+        cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,HI_profile=True,HI_radii=radii,vel_label=vel[i],label=None,ID=None) # label is currently hard-coded as reliability. 
         plt.savefig(f'Mom0_{i+1}_vel={int(vel[i])}.png')
         print(f'Saved Mom0_{i+1}_vel={int(vel[i])}.png')
         print() 
         plt.close()
+
+# To download a folder of PNGs to your local computer:
+# navigate into the folder of PNGs
+# zip <name>.zip *
+# right-click download the zip folder
