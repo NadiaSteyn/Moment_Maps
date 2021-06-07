@@ -185,7 +185,7 @@ def drawEllipse(cube,ax):
         aeb = AnchoredEllipseBeam(ax.transData,width=0,height=0,angle=0)
     ax.add_artist(aeb)
 
-def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=None,frame='world',clean=False, cleaning_factor=1,order=0,vmin=None,vmax=None,HI_profile=False,HI_radii=radii): #I'm using label as the reliability
+def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=None,frame='world', order=0,vmin=None,vmax=None,HI_profile=False,HI_radii=radii): #I'm using label as the reliability
     
     current_wcs_3d = cube.wcs
     current_ra,current_dec,current_vel = current_wcs_3d.pixel_to_world_values(x,y,z)
@@ -200,21 +200,6 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=N
     else:
         moment_map=sub_cube.with_spectral_unit(u.km/u.s).moment(order=1,axis=0,how='cube')
     
-    if clean==True:
-        print(f'cleaning with factor {cleaning_factor}') # removing cleaning_factor * sigma data
-        noise,sigma = get_noise(cube,x,y,z,xpad,ypad,zpad)
-        tolerance = sigma * cleaning_factor
-        diff = moment_map.hdu.data - noise
-        cut = np.where(diff < tolerance)
-        
-        moment_map_clean = moment_map.copy() #This is the cut-out of the inside of the mom-1 galaxy, using the outline from mom-0
-    
-        for i in range(len(cut[0])):
-           moment_map_clean.hdu.data[cut[0][i]][cut[1][i]] = np.nan #change all the pixels that are <tolerence into NaNs
-        img = moment_map_clean.hdu.data
-    else:
-        img = moment_map.hdu.data
-        #hi_column_density = moment_map_clean * 1.82 * 10**18 / (u.cm * u.cm) * u.s / u.K / u.km 
     
     if HI_profile == True:
         gs = gridspec.GridSpec(ncols=20,nrows=25,figure=fig)
