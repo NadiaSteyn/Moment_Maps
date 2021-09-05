@@ -46,45 +46,50 @@ class AnchoredEllipseBeam(AnchoredOffsetbox): #class that I need for plotting el
 ######################################
 
 #Choose FITS cube:
-# hdu = fits.open('/carta_share/users/nadia/Nadia_GA/1538811061_HI_mosaic_heliocen.fits') # 16" x 16", shape: 3788, 3474, 573 
-# beamsize = 16
-hdu = fits.open('/carta_share/users/nadia/CASA/1538811061_mosaic_12x12_9.fits') # 12" x 12"
-beamsize = 12
+hdu = fits.open('/idia/projects/vela/V1_GA_CARACal/mosaics_nadia/T12/output/mosaics/mosaic_T12.fits') # 12" x 12"
+# beamsize = 12 # if you dont have the beamsize in the header
 
-hdu[0].header.set('BMAJ',beamsize/3600)
-hdu[0].header.set('BMIN',beamsize/3600) # Later the GPS mosaics will have this info in the header
+# hdu[0].header.set('BMAJ',beamsize/3600)
+# hdu[0].header.set('BMIN',beamsize/3600) # Later the GPS mosaics will have this info in the header
 cube = SpectralCube.read(hdu) # Initiate a SpectralCube
 
 #convert cube to VRAD m/s:
 print('CONVERTING CUBE INTO VELOCITY UNITS...')
-cube = cube.with_spectral_unit(u.m/u.s,velocity_convention='radio',rest_value=1420.4*u.MHz)
+cube = cube.with_spectral_unit(u.m/u.s,velocity_convention='optical',rest_value=1420.4*u.MHz)
 print(f"Cube now has spectral unit {cube.header['CTYPE3']} {cube.header['CUNIT3']}")
 hdu.close()
-
 
 #Cube now has dimensions [Vel, Dec, RA]
 _, Dec, _ = cube.world[0, :, 0]  #extract Dec world coordinates from cube
 _, _, RA = cube.world[0, 0, :]  #extract RA world coordinates from cube
 
-
 rel = np.ones(1000000) # a fake array of rels in case the the user doesn't have rels
 ID = np.ones(1000000)
 
+nu_lab = 1420405751.7667  #21cm line in HZ
+c=3e5
+def frequency_points(freq,convention):
+    if convention == 'Radio':
+        return c*(nu_lab - freq)/nu_lab 
+    
+    elif convention  == 'Optical':
+        return c*(nu_lab - freq)/freq
+    
 #Choose detection list:
-# infile = '/users/nadia/moment_maps/1538811061_mosaic/Visual_sources/1538811061_visual.txt'
-# vel, x, y, z = np.loadtxt(infile,usecols=(6,7,8,9),unpack=True) #vel in km/s
-#vel = np.around(vel,0)
-#vel = 300000*((-freq + 1420.4e6)/(1420.4e6)) #if your list has freq
+infile = '/users/nadia/HI_flux/T12_x,y_new_03_Sep_2021.txt'
+x, y, z, vel \
+= np.loadtxt(infile, usecols = (0,1,2,3), unpack=True)
+ID = ID.astype(int)
+#vel = np.round(frequency_points(freq,'Optical'),0) # if you have freq instead of vel
+ID = np.loadtxt(infile,usecols=4,dtype=str,unpack=True)
 
-#HIZOA source J1531-55
-vel, x, y, z = 1441, 2198, 1978, 498 #(radio vel I tihnk)
 
-xpad=35
-ypad=35
+xpad=80
+ypad=80
 zpad=2
-radii=35 #radius used around source for HI profile
-zpad_HI=8
-
+radii=60 #radius used around source for HI profile
+zpad_HI=16
+label_name="T12"
 ######################################
 
 #Major and Minor axes (to draw the beam size):
@@ -185,7 +190,7 @@ def drawEllipse(cube,ax):
         aeb = AnchoredEllipseBeam(ax.transData,width=0,height=0,angle=0)
     ax.add_artist(aeb)
 
-def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=None,frame='world', order=0,vmin=None,vmax=None,HI_profile=False,HI_radii=radii): #I'm using label as the reliability
+def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=None,frame='world',clean=False, cleaning_factor=1,order=0,vmin=None,vmax=None,HI_profile=False,HI_radii=radii): #I'm using label as the reliability
     
     current_wcs_3d = cube.wcs
     current_ra,current_dec,current_vel = current_wcs_3d.pixel_to_world_values(x,y,z)
@@ -200,6 +205,21 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=N
     else:
         moment_map=sub_cube.with_spectral_unit(u.km/u.s).moment(order=1,axis=0,how='cube')
     
+    if clean==True:
+        print(f'cleaning with factor {cleaning_factor}') # removing cleaning_factor * sigma data
+        noise,sigma = get_noise(cube,x,y,z,xpad,ypad,zpad)
+        tolerance = sigma * cleaning_factor
+        diff = moment_map.hdu.data - noise
+        cut = np.where(diff < tolerance)
+        
+        moment_map_clean = moment_map.copy() #This is the cut-out of the inside of the mom-1 galaxy, using the outline from mom-0
+    
+        for i in range(len(cut[0])):
+           moment_map_clean.hdu.data[cut[0][i]][cut[1][i]] = np.nan #change all the pixels that are <tolerence into NaNs
+        img = moment_map_clean.hdu.data
+    else:
+        img = moment_map.hdu.data
+        #hi_column_density = moment_map_clean * 1.82 * 10**18 / (u.cm * u.cm) * u.s / u.K / u.km 
     
     if HI_profile == True:
         gs = gridspec.GridSpec(ncols=20,nrows=25,figure=fig)
@@ -208,7 +228,7 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=N
         ax = fig.add_subplot(gs[0:17,0:16], projection=moment_map.wcs) # POINTS ARE NOT IN RA/DEC but the AXES ARE
         ax_HI = fig.add_subplot(gs[19:,0:20])
         hx,hy,current_vel_HI,HI_centre,HI_radius=get_HI_profile(cube, x, y, z, xpad, ypad, radius=HI_radii)
-        ax_HI.plot(hx, hy,'o-', color='k') # Display the HI profile
+        ax_HI.plot(hx, hy,'.-', color='k') # Display the HI profile
         ax_HI.axvline(current_vel,ls='--',color='k',alpha=0.5)
         ax_HI.axhline(0,ls='--',color='k',alpha=0.5)
         #plt.legend()
@@ -283,26 +303,25 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=N
     if grid == True:
         x_box,y_box = 0.03,0.87
     else: x_box,y_box = 0.015,0.94
-        
     if label == None and ID == None and frame=='cartesian':
         plt.text(x_box,y_box,f'Z_chan = {int(round(z))}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
     elif label != None and ID == None and frame=='cartesian':
-        plt.text(x_box,y_box,f'Z_chan = {int(round(z))} \nrel = {round(label,4)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        plt.text(x_box,y_box,f'Z_chan = {int(round(z))} \n{label_name} = {round(label,4)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
     elif label != None and ID != None and frame=='cartesian':
-        plt.text(x_box,y_box,f'Z_chan = {int(round(z))} \nrel = {round(label,4)} \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        plt.text(x_box,y_box,f'Z_chan = {int(round(z))} \n{label_name} = {round(label,4)} \nID = {ID}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
         
     elif label !=None and ID != None and frame == 'world':
         if vel_label == None:
-            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nrel = {round(label,4)} \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \n{label_name} = {label} \nID = {ID}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
         else:
-            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s \nrel = {round(label,4)} \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s \n{label_name} = {label} \nID = {ID}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
             
             
     elif label != None and ID ==None and frame == 'world':
         if vel_label==None:
-            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nrel = {round(label,4)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \n{label_name} = {label}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
         else:
-            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s \nrel = {round(label,4)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s \n{label_name} = {label}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
                 
                 
     elif label == None and ID == None and frame == 'world':
@@ -314,14 +333,14 @@ def cut_mom_map(cube,x,y,z,xpad,ypad,zpad,pos=111,label=None,ID=None,vel_label=N
             
     elif label == None and ID != None and frame == 'world':
         if vel_label == None:
-            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+            plt.text(x_box,y_box,f'Vel = {int(round(current_vel))} km/s \nID = {ID}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
         else:
-            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+            plt.text(x_box,y_box,f'Vel = {int(vel_label)} km/s \nID = {ID}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
         
         
     elif label == None and ID != None and frame=='cartesian':
-        plt.text(x_box,y_box,f'Z_chan = {int(round(z))} \nID = {int(ID)}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
-
+        plt.text(x_box,y_box,f'Z_chan = {int(round(z))} \nID = {ID}',ha ='left',va='center',transform = ax.transAxes,fontsize=10,weight='bold',color='k',bbox=dict(facecolor='w',alpha=0.5))
+        
 def sum_region(centre, radius, data_array):
     xs = []
     ys = []
@@ -367,7 +386,7 @@ def get_HI_profile(cube,x,y,z,xpad,ypad,radius):
 # Plots
 ######################################
 
-pos_only = False #plot only the detections with positive velocity
+pos_only = True #plot only the detections with positive velocity
 grid = False #plot moment maps in grids of 9
 sorting = False
 
@@ -378,8 +397,8 @@ if pos_only==True:
     z=z[pos_vels]
     ID=ID[pos_vels]
     rel=rel[pos_vels]
-    ra_sof=ra_sof[pos_vels]
-    dec_sof=dec_sof[pos_vels]
+#     ra_sof=ra_sof[pos_vels]
+#     dec_sof=dec_sof[pos_vels]
     vel=vel[pos_vels]
 
 if sorting == True: #sort the images
@@ -407,7 +426,7 @@ if grid==True: # mom-maps ONLY, no HI profiles
         plt.tight_layout() 
         for counter in range(9): #a grid of 9 plots in a figure
             pos=330+counter+1
-            cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,pos=pos,order=0,vmin=0,HI_radii=radii,vel_label=vel[i],label=None,ID=None) # label is currently hard-coded as reliability. 
+            cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,pos=pos,order=0,HI_radii=radii,vel_label=vel[i],ID=ID[i])
             i+=1
             if i == len(x):
                 break
@@ -428,7 +447,7 @@ else: # HI profiles optional
     for i in range(len(x)):
         fig = plt.figure(figsize=(10,10))
         plt.tight_layout()
-        cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,HI_profile=True,HI_radii=radii,vel_label=vel[i],label=None,ID=None) # label is currently hard-coded as reliability. 
+        cut_mom_map(cube,x[i],y[i],z[i],xpad,ypad,zpad,HI_profile=True,HI_radii=radii,vel_label=vel[i],ID=ID[i]) 
         plt.savefig(f'Mom0_{i+1}_vel={int(vel[i])}.png')
         print(f'Saved Mom0_{i+1}_vel={int(vel[i])}.png')
         print() 
