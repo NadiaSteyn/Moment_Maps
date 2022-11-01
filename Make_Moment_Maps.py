@@ -7,6 +7,7 @@ Created on Wed May  6 11:37:46 2020
 This program will generate moment maps of a given list of detections 
 
 """
+#my first git commit
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,6 +27,8 @@ warnings.simplefilter('ignore', FITSFixedWarning)
 #module add python/3.8.3
 #comment out block: cmd + /
 #cancel the run control+c
+
+print("git commit")
 
 from matplotlib.offsetbox import (AnchoredOffsetbox, AuxTransformBox, DrawingArea, TextArea, VPacker)
 class AnchoredEllipseBeam(AnchoredOffsetbox): #class that I need for plotting ellipse
