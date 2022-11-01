@@ -8,6 +8,7 @@ This program will generate moment maps of a given list of detections
 
 """
 #my first git commit
+#my second commit
 
 import numpy as np
 import matplotlib.pyplot as plt
