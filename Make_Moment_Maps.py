@@ -9,6 +9,7 @@ This program will generate moment maps of a given list of detections
 """
 #my first git commit
 #my second commit
+#I want the GitHub action to run once I push this change
 
 import numpy as np
 import matplotlib.pyplot as plt
